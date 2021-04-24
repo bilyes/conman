@@ -20,7 +20,7 @@ func New(concurrencyLimit int64) ConMan {
 
 // Task an interface that defines task execution
 type Task interface {
-    Execute() (interface{}, error)
+	Execute() (interface{}, error)
 }
 
 // Run runs a task function
@@ -35,12 +35,12 @@ func (c *ConMan) Run(t Task) {
 	go func() {
 		defer c.releaseOne()
 
-        op, err := t.Execute()
+		op, err := t.Execute()
 		if err != nil {
 			c.errors = append(c.errors, err)
-        } else {
-            c.outputs = append(c.outputs, op)
-        }
+		} else {
+			c.outputs = append(c.outputs, op)
+		}
 	}()
 }
 
