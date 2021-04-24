@@ -1,4 +1,4 @@
-// Package conman
+// Package conman, a concurrency management package
 package conman
 
 import "sync"
@@ -18,6 +18,11 @@ func New(concurrencyLimit int64) ConMan {
 	return ConMan{buffer: make(chan interface{}, concurrencyLimit)}
 }
 
+// Task an interface that defines task execution
+type Task interface {
+    Execute() (interface{}, error)
+}
+
 // Run runs a task function
 // If the concurrency limit is reached, it waits until a running
 // task is done.
@@ -25,12 +30,12 @@ func New(concurrencyLimit int64) ConMan {
 // A task function must not take in any parameters, and must return
 // a interface{}-error pair
 // e.g.: func () (interface{}, error) {}
-func (c *ConMan) Run(t task) {
+func (c *ConMan) Run(t Task) {
 	c.reserveOne()
 	go func() {
 		defer c.releaseOne()
 
-        op, err := t()
+        op, err := t.Execute()
 		if err != nil {
 			c.errors = append(c.errors, err)
         } else {
@@ -55,8 +60,6 @@ func (c *ConMan) Outputs() []interface{} {
 func (c *ConMan) Errors() []error {
 	return c.errors
 }
-
-type task func() (interface{}, error)
 
 func (c *ConMan) reserveOne() {
 	c.buffer <- nil
