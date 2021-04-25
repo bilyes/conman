@@ -1,7 +1,7 @@
 # ConMan, A Concurrency Manager for Go
 
 ConMan is a concurrency manager that allows you to set a limit to the number of
-go-routines you want to run concurrently. It provides an intuitive interface for
+tasks that are can run concurrently. It provides an intuitive interface for
 defining and running any type of tasks concurrently.
 
 ### Example
