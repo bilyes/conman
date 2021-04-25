@@ -1,3 +1,6 @@
+// Author: Ilyess Bachiri
+// Copyright (c) 2021-present Ilyess Bachiri
+
 package conman
 
 import (

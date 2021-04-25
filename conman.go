@@ -1,3 +1,6 @@
+// Author: Ilyess Bachiri
+// Copyright (c) 2021-present Ilyess Bachiri
+
 // Package conman, a concurrency management package
 package conman
 

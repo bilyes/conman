@@ -36,8 +36,8 @@ func (s *slowFibo) Execute() (interface{}, error) {
 
 func main() {
     // Create a concurrency manager with a limit of 2.
-    // This means that no more than 2 go routines will
-    // be running at the same time.
+    // This means that the total number of concurrently running
+    // tasks will never exceed 2.
     cm := conman.New(2)
 
     cm.Run(&slowFibo{operand: 5})
