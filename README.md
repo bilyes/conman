@@ -1,10 +1,48 @@
-# ConMan, A Concurrency Manager for Go
+# ConMan
 
-ConMan is a concurrency manager that allows you to set a limit to the number of
-tasks that are can run concurrently. It provides an intuitive interface for
-defining and running any type of tasks concurrently.
+ConMan is a concurrency manager for Go that allows setting a limit to the number of
+tasks that can run concurrently. It provides an intuitive interface for defining
+and concurrently running any type of tasks.
 
-### Example
+## Usage
+
+Define a `Task`, which is a `stuct` implementing the `Execute` function. Example:
+
+```go
+type sum struct {
+    op1 int
+    op2 int
+}
+
+func (s *sum) Execute() (interface{}, error) {
+    return s.op1 + s.op2, nil
+}
+```
+
+Then, create a new Concurrency Manager with a concurrency limit. Example:
+
+```go
+cm := conman.New(5) // concurrency limit of 5
+```
+
+Finally, run as many tasks as needed. Example:
+
+```go
+cm.Run(&sum{op1: 234, op2: 987})
+cm.Run(&sum{op1: 3455, op2: 200})
+// ...
+cm.Run(&sum{op1: 905, op2: 7329})
+```
+
+You can wait for all the tasks to complete before moving on using `cm.Wait()`.
+
+The outputs from all the tasks are collected in `cm.Outputs()`, and errors can
+be retrieved via `cm.Errors()`.
+
+## Complete Example
+
+Here's a complete example of running multiple Fibonacci calculations
+concurrently using ConMan with a concurrency limit of 2.
 
 ```go
 package main
