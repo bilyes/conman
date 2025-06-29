@@ -12,18 +12,18 @@ import "sync"
 type ConMan struct {
 	wg      sync.WaitGroup
 	errors  []error
-	outputs []interface{}
-	buffer  chan interface{}
+	outputs []any
+	buffer  chan any
 }
 
 // New creates a new ConMan instance
 func New(concurrencyLimit int64) ConMan {
-	return ConMan{buffer: make(chan interface{}, concurrencyLimit)}
+	return ConMan{buffer: make(chan any, concurrencyLimit)}
 }
 
 // Task an interface that defines task execution
 type Task interface {
-	Execute() (interface{}, error)
+	Execute() (any, error)
 }
 
 // Run runs a task function
@@ -31,8 +31,8 @@ type Task interface {
 // task is done.
 //
 // A task function must not take in any parameters, and must return
-// a interface{}-error pair
-// e.g.: func () (interface{}, error) {}
+// a any-error pair
+// e.g.: func () (any, error) {}
 func (c *ConMan) Run(t Task) {
 	c.reserveOne()
 	go func() {
@@ -54,7 +54,7 @@ func (c *ConMan) Wait() {
 
 // Outputs returns a slice of returned values from all the tasks
 // that did not return an error
-func (c *ConMan) Outputs() []interface{} {
+func (c *ConMan) Outputs() []any {
 	return c.outputs
 }
 

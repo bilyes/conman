@@ -5,6 +5,7 @@ package conman
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 )
@@ -13,7 +14,7 @@ type doubler struct {
 	operand int
 }
 
-func (d *doubler) Execute() (interface{}, error) {
+func (d *doubler) Execute() (any, error) {
 	return d.operand * 2, nil
 }
 
@@ -21,7 +22,7 @@ type errdoubler struct {
 	operand int
 }
 
-func (d *errdoubler) Execute() (interface{}, error) {
+func (d *errdoubler) Execute() (any, error) {
 	return nil, fmt.Errorf("Error calculating for %v", d.operand)
 }
 
@@ -29,7 +30,7 @@ type slowdoubler struct {
 	operand int
 }
 
-func (d *slowdoubler) Execute() (interface{}, error) {
+func (d *slowdoubler) Execute() (any, error) {
 	time.Sleep(time.Second)
 	return d.operand * 2, nil
 }
@@ -44,7 +45,7 @@ func TestCaptureOutputs(t *testing.T) {
 	cm.Wait()
 
 	for _, o := range []int{598, 1064, 406} {
-		if !contains(cm.Outputs(), o) {
+		if !slices.Contains[[]any, any](cm.Outputs(), o) {
 			t.Errorf("Expected output %v is not part of the captured outputs", o)
 		}
 	}
@@ -75,12 +76,12 @@ func TestConcurrencyLimit(t *testing.T) {
 
 	// Wait to make sure the first two tasks have completed
 	time.Sleep(100 * time.Millisecond)
-	if contains(cm.Outputs(), 406) {
+	if slices.Contains(cm.Outputs(), 406) {
 		t.Errorf("Didn't expect task for 406 to have been executed")
 	}
 	cm.Wait()
 
-	if !contains(cm.Outputs(), 406) {
+	if !slices.Contains(cm.Outputs(), 406) {
 		t.Errorf("Expected task for 406 to have been exectued")
 	}
 }
@@ -88,15 +89,6 @@ func TestConcurrencyLimit(t *testing.T) {
 func containsError(items []error, item error) bool {
 	for _, i := range items {
 		if i.Error() == item.Error() {
-			return true
-		}
-	}
-	return false
-}
-
-func contains(items []interface{}, item interface{}) bool {
-	for _, i := range items {
-		if i == item {
 			return true
 		}
 	}
