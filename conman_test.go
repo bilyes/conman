@@ -14,7 +14,7 @@ type doubler struct {
 	operand int
 }
 
-func (d *doubler) Execute() (any, error) {
+func (d *doubler) Execute() (int, error) {
 	return d.operand * 2, nil
 }
 
@@ -22,21 +22,21 @@ type errdoubler struct {
 	operand int
 }
 
-func (d *errdoubler) Execute() (any, error) {
-	return nil, fmt.Errorf("Error calculating for %v", d.operand)
+func (d *errdoubler) Execute() (int, error) {
+	return -1, fmt.Errorf("Error calculating for %v", d.operand)
 }
 
 type slowdoubler struct {
 	operand int
 }
 
-func (d *slowdoubler) Execute() (any, error) {
+func (d *slowdoubler) Execute() (int, error) {
 	time.Sleep(time.Second)
 	return d.operand * 2, nil
 }
 
 func TestCaptureOutputs(t *testing.T) {
-	cm := New(5)
+	cm := New[int](5)
 
 	cm.Run(&doubler{operand: 299})
 	cm.Run(&doubler{operand: 532})
@@ -45,14 +45,14 @@ func TestCaptureOutputs(t *testing.T) {
 	cm.Wait()
 
 	for _, o := range []int{598, 1064, 406} {
-		if !slices.Contains[[]any, any](cm.Outputs(), o) {
+		if !slices.Contains(cm.Outputs(), o) {
 			t.Errorf("Expected output %v is not part of the captured outputs", o)
 		}
 	}
 }
 
 func TestCaptureErrors(t *testing.T) {
-	cm := New(5)
+	cm := New[int](5)
 
 	cm.Run(&errdoubler{operand: 299})
 	cm.Run(&errdoubler{operand: 532})
@@ -68,7 +68,7 @@ func TestCaptureErrors(t *testing.T) {
 }
 
 func TestConcurrencyLimit(t *testing.T) {
-	cm := New(2)
+	cm := New[int](2)
 
 	cm.Run(&slowdoubler{operand: 299})
 	cm.Run(&slowdoubler{operand: 532})
