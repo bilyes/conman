@@ -14,15 +14,16 @@ type sum struct {
     op2 int
 }
 
-func (s *sum) Execute() (interface{}, error) {
+func (s *sum) Execute() (int, error) {
     return s.op1 + s.op2, nil
 }
 ```
 
-Then, create a new Concurrency Manager with a concurrency limit. Example:
+Then, create a new Concurrency Manager meant to run tasks that return an `int` value, with a
+concurrency limit. Example:
 
 ```go
-cm := conman.New(5) // concurrency limit of 5
+cm := conman.New[int](5) // concurrency limit of 5
 ```
 
 Finally, run as many tasks as needed. Example:
@@ -66,7 +67,7 @@ func (s *slowFibo) fibonacci(i int) int {
     return s.fibonacci(i-1) + s.fibonacci(i-2)
 }
 
-func (s *slowFibo) Execute() (interface{}, error) {
+func (s *slowFibo) Execute() (int, error) {
     // Long process...
     time.Sleep(2 * time.Second)
     return s.fibonacci(s.operand), nil
@@ -76,7 +77,7 @@ func main() {
     // Create a concurrency manager with a limit of 2.
     // This means that the total number of concurrently running
     // tasks will never exceed 2.
-    cm := conman.New(2)
+    cm := conman.New[int](2)
 
     cm.Run(&slowFibo{operand: 5})
     cm.Run(&slowFibo{operand: 8})
