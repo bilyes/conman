@@ -10,6 +10,20 @@ import (
 	"time"
 )
 
+type flakydoubler struct {
+	operand  int
+	runCount int
+}
+
+func (f *flakydoubler) Execute() (int, error) {
+	if f.runCount < 2 {
+		f.runCount++
+		return -1, &RetriableError{Err: fmt.Errorf("Try again"), MaxRetries: 2}
+	}
+
+	return f.operand * 2, nil
+}
+
 type doubler struct {
 	operand int
 }
@@ -83,6 +97,21 @@ func TestConcurrencyLimit(t *testing.T) {
 
 	if !slices.Contains(cm.Outputs(), 406) {
 		t.Errorf("Expected task for 406 to have been exectued")
+	}
+}
+
+func TestRetries(t *testing.T) {
+	cm := New[int](3)
+
+	cm.Run(&flakydoubler{operand: 299})
+	cm.Run(&flakydoubler{operand: 532})
+	cm.Run(&flakydoubler{operand: 203})
+
+	cm.Wait()
+	for _, o := range []int{598, 1064, 406} {
+		if !slices.Contains(cm.Outputs(), o) {
+			t.Errorf("Expected output %v is not part of the captured outputs", o)
+		}
 	}
 }
 

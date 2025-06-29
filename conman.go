@@ -6,6 +6,17 @@ package conman
 
 import "sync"
 
+// RetriableError is an error type that indicates a task should be retried.
+// It contains the original error and the maximum number of retries allowed.
+type RetriableError struct {
+	Err        error
+	MaxRetries int
+}
+
+func (e *RetriableError) Error() string {
+	return e.Err.Error()
+}
+
 // ConMan a structure to manage multiple tasks running
 // concurrently while ensuring the total number of running
 // tasks doesn't exceed a certain concurrency limit
@@ -40,7 +51,11 @@ func (c *ConMan[T]) Run(t Task[T]) {
 
 		op, err := t.Execute()
 		if err != nil {
-			c.errors = append(c.errors, err)
+			if er, ok := err.(*RetriableError); ok {
+				c.retry(t, er.MaxRetries)
+			} else {
+				c.errors = append(c.errors, err)
+			}
 		} else {
 			c.outputs = append(c.outputs, op)
 		}
@@ -72,4 +87,21 @@ func (c *ConMan[T]) reserveOne() {
 func (c *ConMan[T]) releaseOne() {
 	c.wg.Done()
 	<-c.buffer
+}
+
+func (c *ConMan[T]) retry(t Task[T], maxRetries int) {
+	retries := 0
+	var err error
+	for retries < maxRetries {
+		var opp T
+		opp, err = t.Execute()
+		if err == nil {
+			c.outputs = append(c.outputs, opp)
+			return
+		}
+		retries++
+	}
+	if err != nil {
+		c.errors = append(c.errors, err)
+	}
 }

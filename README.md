@@ -40,6 +40,33 @@ You can wait for all the tasks to complete before moving on using `cm.Wait()`.
 The outputs from all the tasks are collected in `cm.Outputs()`, and errors can
 be retrieved via `cm.Errors()`.
 
+## Retries
+
+To automatically retry a task when it fails, the `Execute` function must return a pointer to a
+`RetriableError` object. This object should contain the original error (of type `error`) and an
+integer to set the maximum number of retries allowed. Example:
+
+```go
+type sum struct {
+    op1 int
+    op2 int
+	runCount int
+}
+
+func (s *sum) Execute() (int, error) {
+	if f.runCount < 2 {
+		f.runCount++
+        // This flags the task for retries and sets the maximum number of retries allowed
+		return -1, &RetriableError{Err: fmt.Errorf("Try again"), MaxRetries: 2}
+	}
+    return s.op1 + s.op2, nil
+}
+
+cm := conman.New[int](5)
+cm.Run(&sum{op1: 234, op2: 987})
+cm.Run(&sum{op1: 3455, op2: 200})
+```
+
 ## Complete Example
 
 Here's a complete example of running multiple Fibonacci calculations
