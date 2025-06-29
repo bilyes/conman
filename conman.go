@@ -9,21 +9,21 @@ import "sync"
 // ConMan a structure to manage multiple tasks running
 // concurrently while ensuring the total number of running
 // tasks doesn't exceed a certain concurrency limit
-type ConMan struct {
+type ConMan[T any] struct {
 	wg      sync.WaitGroup
 	errors  []error
-	outputs []any
+	outputs []T
 	buffer  chan any
 }
 
 // New creates a new ConMan instance
-func New(concurrencyLimit int64) ConMan {
-	return ConMan{buffer: make(chan any, concurrencyLimit)}
+func New[T any](concurrencyLimit int64) ConMan[T] {
+	return ConMan[T]{buffer: make(chan any, concurrencyLimit)}
 }
 
 // Task an interface that defines task execution
-type Task interface {
-	Execute() (any, error)
+type Task[T any] interface {
+	Execute() (T, error)
 }
 
 // Run runs a task function
@@ -31,9 +31,9 @@ type Task interface {
 // task is done.
 //
 // A task function must not take in any parameters, and must return
-// a any-error pair
-// e.g.: func () (any, error) {}
-func (c *ConMan) Run(t Task) {
+// a value of type T and an error.
+// e.g.: func () (T, error) {}
+func (c *ConMan[T]) Run(t Task[T]) {
 	c.reserveOne()
 	go func() {
 		defer c.releaseOne()
@@ -48,28 +48,28 @@ func (c *ConMan) Run(t Task) {
 }
 
 // Wait suspends execution until all running tasks are done
-func (c *ConMan) Wait() {
+func (c *ConMan[T]) Wait() {
 	c.wg.Wait()
 }
 
 // Outputs returns a slice of returned values from all the tasks
 // that did not return an error
-func (c *ConMan) Outputs() []any {
+func (c *ConMan[T]) Outputs() []T {
 	return c.outputs
 }
 
 // Errors returns a slice of errors that were returned
 // by all the tasks run by the Run function
-func (c *ConMan) Errors() []error {
+func (c *ConMan[T]) Errors() []error {
 	return c.errors
 }
 
-func (c *ConMan) reserveOne() {
+func (c *ConMan[T]) reserveOne() {
 	c.buffer <- nil
 	c.wg.Add(1)
 }
 
-func (c *ConMan) releaseOne() {
+func (c *ConMan[T]) releaseOne() {
 	c.wg.Done()
 	<-c.buffer
 }
