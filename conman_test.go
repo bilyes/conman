@@ -24,6 +24,14 @@ func (f *flakydoubler) Execute() (int, error) {
 	return f.operand * 2, nil
 }
 
+type faultydoubler struct {
+	operand int
+}
+
+func (f *faultydoubler) Execute() (int, error) {
+	return -1, &RetriableError{Err: fmt.Errorf("Try again"), MaxRetries: 2}
+}
+
 type doubler struct {
 	operand int
 }
@@ -112,6 +120,26 @@ func TestRetries(t *testing.T) {
 		if !slices.Contains(cm.Outputs(), o) {
 			t.Errorf("Expected output %v is not part of the captured outputs", o)
 		}
+	}
+}
+
+func TestMaxRetries(t *testing.T) {
+	cm := New[int](3)
+
+	cm.Run(&faultydoubler{operand: 299})
+	cm.Run(&faultydoubler{operand: 532})
+	cm.Run(&faultydoubler{operand: 203})
+
+	cm.Wait()
+	for _, o := range []int{598, 1064, 406} {
+		if slices.Contains(cm.Outputs(), o) {
+			t.Errorf("Didn't expect output %v in the captured outputs", o)
+		}
+	}
+
+	errCount := len(cm.Errors())
+	if errCount != 3 {
+		t.Errorf("Expected 3 errors, got %d", errCount)
 	}
 }
 
