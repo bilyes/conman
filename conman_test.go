@@ -4,6 +4,7 @@
 package conman
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"testing"
@@ -15,7 +16,7 @@ type flakydoubler struct {
 	runCount int
 }
 
-func (f *flakydoubler) Execute() (int, error) {
+func (f *flakydoubler) Execute(ctx context.Context) (int, error) {
 	if f.runCount < 2 {
 		f.runCount++
 		return -1, &RetriableError{Err: fmt.Errorf("Try again"), MaxRetries: 2}
@@ -28,7 +29,7 @@ type faultydoubler struct {
 	operand int
 }
 
-func (f *faultydoubler) Execute() (int, error) {
+func (f *faultydoubler) Execute(ctx context.Context) (int, error) {
 	return -1, &RetriableError{Err: fmt.Errorf("Try again"), MaxRetries: 2}
 }
 
@@ -36,7 +37,7 @@ type doubler struct {
 	operand int
 }
 
-func (d *doubler) Execute() (int, error) {
+func (d *doubler) Execute(ctx context.Context) (int, error) {
 	return d.operand * 2, nil
 }
 
@@ -44,25 +45,36 @@ type errdoubler struct {
 	operand int
 }
 
-func (d *errdoubler) Execute() (int, error) {
+func (d *errdoubler) Execute(ctx context.Context) (int, error) {
 	return -1, fmt.Errorf("Error calculating for %v", d.operand)
 }
 
 type slowdoubler struct {
-	operand int
+	delayInSeconds int
+	operand        int
 }
 
-func (d *slowdoubler) Execute() (int, error) {
-	time.Sleep(time.Second)
-	return d.operand * 2, nil
+func (d *slowdoubler) Execute(ctx context.Context) (int, error) {
+	delay := d.delayInSeconds
+	if delay == 0 {
+		delay = 1 // default to 1 second if not specified
+	}
+	time.Sleep(time.Duration(delay) * time.Second)
+	select {
+	case <-ctx.Done():
+		return -1, ctx.Err()
+	default:
+		return d.operand * 2, nil
+	}
 }
 
 func TestCaptureOutputs(t *testing.T) {
+	ctx := t.Context()
 	cm := New[int](5)
 
-	cm.Run(&doubler{operand: 299})
-	cm.Run(&doubler{operand: 532})
-	cm.Run(&doubler{operand: 203})
+	cm.Run(ctx, &doubler{operand: 299})
+	cm.Run(ctx, &doubler{operand: 532})
+	cm.Run(ctx, &doubler{operand: 203})
 
 	cm.Wait()
 
@@ -74,11 +86,12 @@ func TestCaptureOutputs(t *testing.T) {
 }
 
 func TestCaptureErrors(t *testing.T) {
+	ctx := t.Context()
 	cm := New[int](5)
 
-	cm.Run(&errdoubler{operand: 299})
-	cm.Run(&errdoubler{operand: 532})
-	cm.Run(&errdoubler{operand: 203})
+	cm.Run(ctx, &errdoubler{operand: 299})
+	cm.Run(ctx, &errdoubler{operand: 532})
+	cm.Run(ctx, &errdoubler{operand: 203})
 
 	cm.Wait()
 
@@ -90,11 +103,12 @@ func TestCaptureErrors(t *testing.T) {
 }
 
 func TestConcurrencyLimit(t *testing.T) {
+	ctx := t.Context()
 	cm := New[int](2)
 
-	cm.Run(&slowdoubler{operand: 299})
-	cm.Run(&slowdoubler{operand: 532})
-	cm.Run(&slowdoubler{operand: 203})
+	cm.Run(ctx, &slowdoubler{operand: 299})
+	cm.Run(ctx, &slowdoubler{operand: 532})
+	cm.Run(ctx, &slowdoubler{operand: 203})
 
 	// Wait to make sure the first two tasks have completed
 	time.Sleep(100 * time.Millisecond)
@@ -109,11 +123,12 @@ func TestConcurrencyLimit(t *testing.T) {
 }
 
 func TestRetries(t *testing.T) {
+	ctx := t.Context()
 	cm := New[int](3)
 
-	cm.Run(&flakydoubler{operand: 299})
-	cm.Run(&flakydoubler{operand: 532})
-	cm.Run(&flakydoubler{operand: 203})
+	cm.Run(ctx, &flakydoubler{operand: 299})
+	cm.Run(ctx, &flakydoubler{operand: 532})
+	cm.Run(ctx, &flakydoubler{operand: 203})
 
 	cm.Wait()
 	for _, o := range []int{598, 1064, 406} {
@@ -124,11 +139,12 @@ func TestRetries(t *testing.T) {
 }
 
 func TestMaxRetries(t *testing.T) {
+	ctx := t.Context()
 	cm := New[int](3)
 
-	cm.Run(&faultydoubler{operand: 299})
-	cm.Run(&faultydoubler{operand: 532})
-	cm.Run(&faultydoubler{operand: 203})
+	cm.Run(ctx, &faultydoubler{operand: 299})
+	cm.Run(ctx, &faultydoubler{operand: 532})
+	cm.Run(ctx, &faultydoubler{operand: 203})
 
 	cm.Wait()
 	for _, o := range []int{598, 1064, 406} {
@@ -139,6 +155,58 @@ func TestMaxRetries(t *testing.T) {
 
 	if errCount := len(cm.Errors()); errCount != 3 {
 		t.Errorf("Expected 3 errors, got %d", errCount)
+	}
+}
+
+func TestDispatchTimeout(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	cm := New[int](3)
+
+	cm.Run(ctx, &slowdoubler{operand: 299})
+	time.Sleep(4 * time.Second)
+	if err := cm.Run(ctx, &slowdoubler{operand: 532}); err == nil {
+		t.Errorf("Expected context deadline exceeded error but got nil")
+	}
+	if err := cm.Run(ctx, &slowdoubler{operand: 203}); err == nil {
+		t.Errorf("Expected context deadline exceeded error but got nil")
+	}
+
+	cm.Wait()
+	if !slices.Contains(cm.Outputs(), 598) {
+		t.Errorf("Expected output %v is not part of the captured outputs", 598)
+	}
+}
+
+func TestContextPropagation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	cm := New[int](3)
+	cm.Run(ctx, &slowdoubler{operand: 299, delayInSeconds: 1})
+	cm.Run(ctx, &slowdoubler{operand: 532, delayInSeconds: 2})
+	cm.Run(ctx, &slowdoubler{operand: 203, delayInSeconds: 6})
+
+	go func() {
+		<-time.After(5 * time.Second)
+		cancel()
+	}()
+
+	cm.Wait()
+	for _, o := range []int{598, 1064} {
+		if !slices.Contains(cm.Outputs(), o) {
+			t.Errorf("Expected output %v is not part of the captured outputs", o)
+		}
+	}
+
+	if slices.Contains(cm.Outputs(), 406) {
+		t.Errorf("Didn't expect output %v in the captured outputs", 406)
+	}
+	if len(cm.Errors()) < 1 {
+		t.Error("Expected one error, got none")
+	}
+	err := cm.Errors()[0].Error()
+	if err != "context canceled" {
+		t.Errorf("Expected a 'context canceled' error, got '%s'", err)
 	}
 }
 
