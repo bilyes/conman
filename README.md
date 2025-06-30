@@ -70,7 +70,7 @@ func (s *sum) Execute(ctx context.Context) (int, error) {
 }
 
 ctx, cancel := context.WithCancel(context.Background())
-    defer cancel()
+defer cancel()
 
 cm := conman.New[int](5)
 cm.Run(ctx, &sum{op1: 234, op2: 987})
