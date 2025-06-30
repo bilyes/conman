@@ -137,8 +137,7 @@ func TestMaxRetries(t *testing.T) {
 		}
 	}
 
-	errCount := len(cm.Errors())
-	if errCount != 3 {
+	if errCount := len(cm.Errors()); errCount != 3 {
 		t.Errorf("Expected 3 errors, got %d", errCount)
 	}
 }
