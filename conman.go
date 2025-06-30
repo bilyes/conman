@@ -4,7 +4,10 @@
 // Package conman, a concurrency management package
 package conman
 
-import "sync"
+import (
+	"context"
+	"sync"
+)
 
 // RetriableError is an error type that indicates a task should be retried.
 // It contains the original error and the maximum number of retries allowed.
@@ -34,7 +37,7 @@ func New[T any](concurrencyLimit int64) ConMan[T] {
 
 // Task an interface that defines task execution
 type Task[T any] interface {
-	Execute() (T, error)
+	Execute(ctx context.Context) (T, error)
 }
 
 // Run runs a task function
@@ -44,22 +47,18 @@ type Task[T any] interface {
 // A task function must not take in any parameters, and must return
 // a value of type T and an error.
 // e.g.: func () (T, error) {}
-func (c *ConMan[T]) Run(t Task[T]) {
-	c.reserveOne()
-	go func() {
-		defer c.releaseOne()
-
-		op, err := t.Execute()
-		if err != nil {
-			if er, ok := err.(*RetriableError); ok {
-				c.retry(t, er.MaxRetries)
-			} else {
-				c.errors = append(c.errors, err)
-			}
-		} else {
-			c.outputs = append(c.outputs, op)
-		}
-	}()
+func (c *ConMan[T]) Run(ctx context.Context, t Task[T]) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		c.reserveOne()
+		go func() {
+			defer c.releaseOne()
+			c.executeTask(ctx, t)
+		}()
+	}
+	return nil
 }
 
 // Wait suspends execution until all running tasks are done
@@ -89,12 +88,27 @@ func (c *ConMan[T]) releaseOne() {
 	<-c.buffer
 }
 
-func (c *ConMan[T]) retry(t Task[T], maxRetries int) {
+func (c *ConMan[T]) executeTask(ctx context.Context, t Task[T]) {
+	op, err := t.Execute(ctx)
+	if err == nil {
+		c.outputs = append(c.outputs, op)
+		return
+	}
+
+	if er, ok := err.(*RetriableError); ok {
+		c.retry(ctx, t, er.MaxRetries)
+		return
+	}
+
+	c.errors = append(c.errors, err)
+}
+
+func (c *ConMan[T]) retry(ctx context.Context, t Task[T], maxRetries int) {
 	retries := 0
 	var err error
 	for retries < maxRetries {
 		var opp T
-		opp, err = t.Execute()
+		opp, err = t.Execute(ctx)
 		if err == nil {
 			c.outputs = append(c.outputs, opp)
 			return
