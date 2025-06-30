@@ -14,7 +14,7 @@ type sum struct {
     op2 int
 }
 
-func (s *sum) Execute() (int, error) {
+func (s *sum) Execute(ctx context.Context) (int, error) {
     return s.op1 + s.op2, nil
 }
 ```
@@ -29,16 +29,23 @@ cm := conman.New[int](5) // concurrency limit of 5
 Finally, run as many tasks as needed. Example:
 
 ```go
-cm.Run(&sum{op1: 234, op2: 987})
-cm.Run(&sum{op1: 3455, op2: 200})
+var err error
+err = cm.Run(ctx, &sum{op1: 234, op2: 987})
+// handle error ...
+err = cm.Run(ctx, &sum{op1: 3455, op2: 200})
+// handle error ...
 // ...
-cm.Run(&sum{op1: 905, op2: 7329})
+err = cm.Run(ctx, &sum{op1: 905, op2: 7329})
+// handle error ...
 ```
 
 You can wait for all the tasks to complete before moving on using `cm.Wait()`.
 
 The outputs from all the tasks are collected in `cm.Outputs()`, and errors can
 be retrieved via `cm.Errors()`.
+
+If the context `ctx` is cancelled for whatever reason, all subsequent calls to `cm.Run()` will
+return an error about context cancellation.
 
 ## Retries
 
@@ -53,7 +60,7 @@ type sum struct {
 	runCount int
 }
 
-func (s *sum) Execute() (int, error) {
+func (s *sum) Execute(ctx context.Context) (int, error) {
 	if f.runCount < 2 {
 		f.runCount++
         // This flags the task for retries and sets the maximum number of retries allowed
@@ -62,9 +69,12 @@ func (s *sum) Execute() (int, error) {
     return s.op1 + s.op2, nil
 }
 
+ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+
 cm := conman.New[int](5)
-cm.Run(&sum{op1: 234, op2: 987})
-cm.Run(&sum{op1: 3455, op2: 200})
+cm.Run(ctx, &sum{op1: 234, op2: 987})
+cm.Run(ctx, &sum{op1: 3455, op2: 200})
 ```
 
 ## Complete Example
@@ -76,6 +86,7 @@ concurrently using ConMan with a concurrency limit of 2.
 package main
 
 import (
+    "context"
     "fmt"
     "log"
     "time"
@@ -94,22 +105,35 @@ func (s *slowFibo) fibonacci(i int) int {
     return s.fibonacci(i-1) + s.fibonacci(i-2)
 }
 
-func (s *slowFibo) Execute() (int, error) {
+func (s *slowFibo) Execute(ctx context.Context) (int, error) {
     // Long process...
     time.Sleep(2 * time.Second)
-    return s.fibonacci(s.operand), nil
+    switch {
+    case <-ctx.Done():
+        return -1, ctx.Err()
+    default:
+        return s.fibonacci(s.operand), nil
+    }
 }
 
 func main() {
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+
     // Create a concurrency manager with a limit of 2.
     // This means that the total number of concurrently running
     // tasks will never exceed 2.
     cm := conman.New[int](2)
 
-    cm.Run(&slowFibo{operand: 5})
-    cm.Run(&slowFibo{operand: 8})
-    cm.Run(&slowFibo{operand: 13})
-    cm.Run(&slowFibo{operand: 16})
+    for _, op := range []int{5, 8, 13, 16} {
+        // Dispatch task executions with the context ctx
+        if err := cm.Run(ctx, &slowFibo{operand: op}); err != nil {
+            // There was an error with dispatching the task execution.
+            // This is not an error caused by the execution itself. Those errors are handled
+            // by ConMan internally and are accessible through the Errors() function.
+            fmt.Printf("Error for operand %s: %v", err)
+        }
+    }
 
     // Wait until all tasks are completed
     cm.Wait()
