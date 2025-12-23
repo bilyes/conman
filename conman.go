@@ -25,6 +25,7 @@ func (e *RetriableError) Error() string {
 // tasks doesn't exceed a certain concurrency limit
 type ConMan[T any] struct {
 	wg      sync.WaitGroup
+	mu      sync.Mutex
 	errors  []error
 	outputs []T
 	buffer  chan any
@@ -67,15 +68,23 @@ func (c *ConMan[T]) Wait() {
 }
 
 // Outputs returns a slice of returned values from all the tasks
-// that did not return an error
+// that did not return an error.
 func (c *ConMan[T]) Outputs() []T {
-	return c.outputs
+	var result []T
+	c.withLock(func() {
+		result = c.outputs
+	})
+	return result
 }
 
 // Errors returns a slice of errors that were returned
-// by all the tasks run by the Run function
+// by all the tasks run by the Run function.
 func (c *ConMan[T]) Errors() []error {
-	return c.errors
+	var result []error
+	c.withLock(func() {
+		result = c.errors
+	})
+	return result
 }
 
 func (c *ConMan[T]) reserveOne() {
@@ -91,7 +100,9 @@ func (c *ConMan[T]) releaseOne() {
 func (c *ConMan[T]) executeTask(ctx context.Context, t Task[T]) {
 	op, err := t.Execute(ctx)
 	if err == nil {
-		c.outputs = append(c.outputs, op)
+		c.withLock(func() {
+			c.outputs = append(c.outputs, op)
+		})
 		return
 	}
 
@@ -100,7 +111,9 @@ func (c *ConMan[T]) executeTask(ctx context.Context, t Task[T]) {
 		return
 	}
 
-	c.errors = append(c.errors, err)
+	c.withLock(func() {
+		c.errors = append(c.errors, err)
+	})
 }
 
 func (c *ConMan[T]) retry(ctx context.Context, t Task[T], maxRetries int) {
@@ -110,12 +123,23 @@ func (c *ConMan[T]) retry(ctx context.Context, t Task[T], maxRetries int) {
 		var opp T
 		opp, err = t.Execute(ctx)
 		if err == nil {
-			c.outputs = append(c.outputs, opp)
+			c.withLock(func() {
+				c.outputs = append(c.outputs, opp)
+			})
 			return
 		}
 		retries++
 	}
 	if err != nil {
-		c.errors = append(c.errors, err)
+		c.withLock(func() {
+			c.errors = append(c.errors, err)
+		})
 	}
+}
+
+// withLock executes a function while holding the mutex lock
+func (c *ConMan[T]) withLock(fn func()) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	fn()
 }
