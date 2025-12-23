@@ -87,16 +87,19 @@ func (c *ConMan[T]) Errors() []error {
 	return result
 }
 
+// reserveOne reserves a slot in the concurrency buffer and increments wait group
 func (c *ConMan[T]) reserveOne() {
 	c.buffer <- nil
 	c.wg.Add(1)
 }
 
+// releaseOne decrements wait group and releases a slot from concurrency buffer
 func (c *ConMan[T]) releaseOne() {
 	c.wg.Done()
 	<-c.buffer
 }
 
+// executeTask runs a single task and handles its result or error
 func (c *ConMan[T]) executeTask(ctx context.Context, t Task[T]) {
 	op, err := t.Execute(ctx)
 	if err == nil {
@@ -116,6 +119,7 @@ func (c *ConMan[T]) executeTask(ctx context.Context, t Task[T]) {
 	})
 }
 
+// retry attempts to execute a task up to maxRetries times
 func (c *ConMan[T]) retry(ctx context.Context, t Task[T], maxRetries int) {
 	retries := 0
 	var err error
@@ -137,7 +141,7 @@ func (c *ConMan[T]) retry(ctx context.Context, t Task[T], maxRetries int) {
 	}
 }
 
-// withLock executes a function while holding the mutex lock
+// withLock executes a function while holding the mutex lock for thread safety
 func (c *ConMan[T]) withLock(fn func()) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
