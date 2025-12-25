@@ -6,19 +6,11 @@ package conman
 
 import (
 	"context"
+	"math"
+	"math/rand/v2"
 	"sync"
+	"time"
 )
-
-// RetriableError is an error type that indicates a task should be retried.
-// It contains the original error and the maximum number of retries allowed.
-type RetriableError struct {
-	Err        error
-	MaxRetries int
-}
-
-func (e *RetriableError) Error() string {
-	return e.Err.Error()
-}
 
 // ConMan a structure to manage multiple tasks running
 // concurrently while ensuring the total number of running
@@ -110,7 +102,7 @@ func (c *ConMan[T]) executeTask(ctx context.Context, t Task[T]) {
 	}
 
 	if er, ok := err.(*RetriableError); ok {
-		c.retry(ctx, t, er.MaxRetries)
+		c.retry(ctx, t, er.RetryConfig)
 		return
 	}
 
@@ -119,11 +111,39 @@ func (c *ConMan[T]) executeTask(ctx context.Context, t Task[T]) {
 	})
 }
 
+func (c *ConMan[T]) calculateDelay(attempt int, config *RetryConfig) time.Duration {
+	delay := float64(config.InitialDelay) * math.Pow(config.BackoffFactor, float64(attempt))
+	if int64(delay) > config.MaxDelay {
+		delay = float64(config.MaxDelay)
+	}
+	if config.Jitter {
+		delay = delay * rand.Float64()
+	}
+	return time.Duration(delay) * time.Millisecond
+}
+
+func (c *ConMan[T]) waitForNextAttempt(ctx context.Context, attempt int, config *RetryConfig) error {
+	timer := time.NewTimer(c.calculateDelay(attempt, config))
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
 // retry attempts to execute a task up to maxRetries times
-func (c *ConMan[T]) retry(ctx context.Context, t Task[T], maxRetries int) {
-	retries := 0
+func (c *ConMan[T]) retry(ctx context.Context, t Task[T], config *RetryConfig) {
+	if config == nil {
+		return
+	}
 	var err error
-	for retries < maxRetries {
+	for attempts := range config.MaxAttempts {
+		if err = c.waitForNextAttempt(ctx, attempts, config); err != nil {
+			break
+		}
 		var opp T
 		opp, err = t.Execute(ctx)
 		if err == nil {
@@ -132,7 +152,6 @@ func (c *ConMan[T]) retry(ctx context.Context, t Task[T], maxRetries int) {
 			})
 			return
 		}
-		retries++
 	}
 	if err != nil {
 		c.withLock(func() {
