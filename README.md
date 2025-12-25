@@ -20,11 +20,17 @@ func (s *sum) Execute(ctx context.Context) (int, error) {
 ```
 
 Then, create a new Concurrency Manager meant to run tasks that return an `int` value, with a
-concurrency limit. Example:
+concurrency limit. The concurrency limit must be at least 2. Example:
 
 ```go
-cm := conman.New[int](5) // concurrency limit of 5
+cm, err := conman.New[int](5) // concurrency limit of 5
+if err != nil {
+    // handle error - invalid concurrency limit
+    log.Fatal(err)
+}
 ```
+
+> **Note:** The concurrency limit must be at least 2. Values less than 2 will return an error.
 
 Finally, run as many tasks as needed. Example:
 
@@ -122,7 +128,10 @@ func (s *sum) Execute(ctx context.Context) (int, error) {
 ctx, cancel := context.WithCancel(context.Background())
 defer cancel()
 
-cm := conman.New[int](5)
+cm, err := conman.New[int](5)
+if err != nil {
+    log.Fatal(err)
+}
 cm.Run(ctx, &sum{op1: 234, op2: 987})
 cm.Run(ctx, &sum{op1: 3455, op2: 200})
 ```
@@ -173,7 +182,10 @@ func main() {
     // Create a concurrency manager with a limit of 2.
     // This means that the total number of concurrently running
     // tasks will never exceed 2.
-    cm := conman.New[int](2)
+    cm, err := conman.New[int](2)
+    if err != nil {
+        log.Fatal(err)
+    }
 
     for _, op := range []int{5, 8, 13, 16} {
         // Dispatch task executions with the context ctx
