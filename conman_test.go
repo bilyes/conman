@@ -19,7 +19,8 @@ type flakydoubler struct {
 func (f *flakydoubler) Execute(ctx context.Context) (int, error) {
 	if f.runCount < 2 {
 		f.runCount++
-		return -1, &RetriableError{Err: fmt.Errorf("Try again"), MaxRetries: 2}
+		err := &RetriableError{Err: fmt.Errorf("Try again")}
+		return -1, err.WithExponentialBackoff()
 	}
 
 	return f.operand * 2, nil
@@ -30,7 +31,8 @@ type faultydoubler struct {
 }
 
 func (f *faultydoubler) Execute(ctx context.Context) (int, error) {
-	return -1, &RetriableError{Err: fmt.Errorf("Try again"), MaxRetries: 2}
+	err := &RetriableError{Err: fmt.Errorf("Try again")}
+	return -1, err.WithLinearBackoff()
 }
 
 type doubler struct {
