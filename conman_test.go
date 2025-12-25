@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -52,16 +53,16 @@ func (d *errdoubler) Execute(ctx context.Context) (int, error) {
 }
 
 type slowdoubler struct {
-	delayInSeconds int
-	operand        int
+	delayInMiliseconds int
+	operand            int
 }
 
 func (d *slowdoubler) Execute(ctx context.Context) (int, error) {
-	delay := d.delayInSeconds
+	delay := d.delayInMiliseconds
 	if delay == 0 {
-		delay = 1 // default to 1 second if not specified
+		delay = 100 // default to 100 ms if not specified
 	}
-	time.Sleep(time.Duration(delay) * time.Second)
+	time.Sleep(time.Duration(delay) * time.Millisecond)
 	select {
 	case <-ctx.Done():
 		return -1, ctx.Err()
@@ -71,8 +72,12 @@ func (d *slowdoubler) Execute(ctx context.Context) (int, error) {
 }
 
 func TestCaptureOutputs(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
-	cm := New[int](5)
+	cm, err := New[int](5)
+	if err != nil {
+		t.Fatalf("Failed to create ConMan: %v", err)
+	}
 
 	cm.Run(ctx, &doubler{operand: 299})
 	cm.Run(ctx, &doubler{operand: 532})
@@ -88,8 +93,12 @@ func TestCaptureOutputs(t *testing.T) {
 }
 
 func TestCaptureErrors(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
-	cm := New[int](5)
+	cm, err := New[int](5)
+	if err != nil {
+		t.Fatalf("Failed to create ConMan: %v", err)
+	}
 
 	cm.Run(ctx, &errdoubler{operand: 299})
 	cm.Run(ctx, &errdoubler{operand: 532})
@@ -105,15 +114,19 @@ func TestCaptureErrors(t *testing.T) {
 }
 
 func TestConcurrencyLimit(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
-	cm := New[int](2)
+	cm, err := New[int](2)
+	if err != nil {
+		t.Fatalf("Failed to create ConMan: %v", err)
+	}
 
 	cm.Run(ctx, &slowdoubler{operand: 299})
 	cm.Run(ctx, &slowdoubler{operand: 532})
 	cm.Run(ctx, &slowdoubler{operand: 203})
 
 	// Wait to make sure the first two tasks have completed
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond)
 	if slices.Contains(cm.Outputs(), 406) {
 		t.Errorf("Didn't expect task for 406 to have been executed")
 	}
@@ -125,8 +138,12 @@ func TestConcurrencyLimit(t *testing.T) {
 }
 
 func TestRetries(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
-	cm := New[int](3)
+	cm, err := New[int](3)
+	if err != nil {
+		t.Fatalf("Failed to create ConMan: %v", err)
+	}
 
 	cm.Run(ctx, &flakydoubler{operand: 299})
 	cm.Run(ctx, &flakydoubler{operand: 532})
@@ -141,8 +158,12 @@ func TestRetries(t *testing.T) {
 }
 
 func TestMaxRetries(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
-	cm := New[int](3)
+	cm, err := New[int](3)
+	if err != nil {
+		t.Fatalf("Failed to create ConMan: %v", err)
+	}
 
 	cm.Run(ctx, &faultydoubler{operand: 299})
 	cm.Run(ctx, &faultydoubler{operand: 532})
@@ -161,12 +182,16 @@ func TestMaxRetries(t *testing.T) {
 }
 
 func TestDispatchTimeout(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
-	cm := New[int](3)
+	cm, err := New[int](3)
+	if err != nil {
+		t.Fatalf("Failed to create ConMan: %v", err)
+	}
 
 	cm.Run(ctx, &slowdoubler{operand: 299})
-	time.Sleep(4 * time.Second)
+	time.Sleep(300 * time.Millisecond) // Ensure the context times out before next runs
 	if err := cm.Run(ctx, &slowdoubler{operand: 532}); err == nil {
 		t.Errorf("Expected context deadline exceeded error but got nil")
 	}
@@ -181,15 +206,19 @@ func TestDispatchTimeout(t *testing.T) {
 }
 
 func TestContextPropagation(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 
-	cm := New[int](3)
-	cm.Run(ctx, &slowdoubler{operand: 299, delayInSeconds: 1})
-	cm.Run(ctx, &slowdoubler{operand: 532, delayInSeconds: 2})
-	cm.Run(ctx, &slowdoubler{operand: 203, delayInSeconds: 6})
+	cm, err := New[int](3)
+	if err != nil {
+		t.Fatalf("Failed to create ConMan: %v", err)
+	}
+	cm.Run(ctx, &slowdoubler{operand: 299, delayInMiliseconds: 100})
+	cm.Run(ctx, &slowdoubler{operand: 532, delayInMiliseconds: 200})
+	cm.Run(ctx, &slowdoubler{operand: 203, delayInMiliseconds: 400})
 
 	go func() {
-		<-time.After(5 * time.Second)
+		<-time.After(300 * time.Millisecond)
 		cancel()
 	}()
 
@@ -206,9 +235,75 @@ func TestContextPropagation(t *testing.T) {
 	if len(cm.Errors()) < 1 {
 		t.Error("Expected one error, got none")
 	}
-	err := cm.Errors()[0].Error()
-	if err != "context canceled" {
-		t.Errorf("Expected a 'context canceled' error, got '%s'", err)
+	errMsg := cm.Errors()[0].Error()
+	if errMsg != "context canceled" {
+		t.Errorf("Expected a 'context canceled' error, got '%s'", errMsg)
+	}
+}
+
+func TestNewValidation(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name             string
+		concurrencyLimit int64
+		expectError      bool
+		errorContains    string
+	}{
+		{
+			name:             "Valid concurrency limit 2",
+			concurrencyLimit: 2,
+			expectError:      false,
+		},
+		{
+			name:             "Valid concurrency limit 5",
+			concurrencyLimit: 5,
+			expectError:      false,
+		},
+		{
+			name:             "Invalid concurrency limit 1",
+			concurrencyLimit: 1,
+			expectError:      true,
+			errorContains:    "concurrencyLimit must be at least 2, got 1",
+		},
+		{
+			name:             "Invalid concurrency limit 0",
+			concurrencyLimit: 0,
+			expectError:      true,
+			errorContains:    "concurrencyLimit must be at least 2, got 0",
+		},
+		{
+			name:             "Invalid concurrency limit negative",
+			concurrencyLimit: -5,
+			expectError:      true,
+			errorContains:    "concurrencyLimit must be at least 2, got -5",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cm, err := New[int](tt.concurrencyLimit)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+					return
+				}
+				if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("Expected error to contain '%s', got '%s'", tt.errorContains, err.Error())
+				}
+				if cm != nil {
+					t.Errorf("Expected nil ConMan on error, got %v", cm)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+					return
+				}
+				if cm == nil {
+					t.Errorf("Expected non-nil ConMan, got nil")
+				}
+			}
+		})
 	}
 }
 

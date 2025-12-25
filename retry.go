@@ -1,3 +1,6 @@
+// Author: Ilyess Bachiri
+// Copyright (c) 2025-present Ilyess Bachiri
+
 package conman
 
 // RetryConfig defines the retry behavior for operations that may fail temporarily.
