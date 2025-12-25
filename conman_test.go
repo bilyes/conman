@@ -83,7 +83,9 @@ func TestCaptureOutputs(t *testing.T) {
 	cm.Run(ctx, &doubler{operand: 532})
 	cm.Run(ctx, &doubler{operand: 203})
 
-	cm.Wait()
+	if err := cm.Wait(ctx); err != nil {
+		t.Fatalf("ConMan Wait returned an unexpected error: %v", err)
+	}
 
 	for _, o := range []int{598, 1064, 406} {
 		if !slices.Contains(cm.Outputs(), o) {
@@ -104,7 +106,9 @@ func TestCaptureErrors(t *testing.T) {
 	cm.Run(ctx, &errdoubler{operand: 532})
 	cm.Run(ctx, &errdoubler{operand: 203})
 
-	cm.Wait()
+	if err := cm.Wait(ctx); err != nil {
+		t.Fatalf("ConMan Wait returned an unexpected error: %v", err)
+	}
 
 	for _, i := range []int{299, 532, 203} {
 		if !containsError(cm.Errors(), fmt.Errorf("Error calculating for %v", i)) {
@@ -130,7 +134,9 @@ func TestConcurrencyLimit(t *testing.T) {
 	if slices.Contains(cm.Outputs(), 406) {
 		t.Errorf("Didn't expect task for 406 to have been executed")
 	}
-	cm.Wait()
+	if err := cm.Wait(ctx); err != nil {
+		t.Fatalf("ConMan Wait returned an unexpected error: %v", err)
+	}
 
 	if !slices.Contains(cm.Outputs(), 406) {
 		t.Errorf("Expected task for 406 to have been exectued")
@@ -149,7 +155,9 @@ func TestRetries(t *testing.T) {
 	cm.Run(ctx, &flakydoubler{operand: 532})
 	cm.Run(ctx, &flakydoubler{operand: 203})
 
-	cm.Wait()
+	if err := cm.Wait(ctx); err != nil {
+		t.Fatalf("ConMan Wait returned an unexpected error: %v", err)
+	}
 	for _, o := range []int{598, 1064, 406} {
 		if !slices.Contains(cm.Outputs(), o) {
 			t.Errorf("Expected output %v is not part of the captured outputs", o)
@@ -169,7 +177,9 @@ func TestMaxRetries(t *testing.T) {
 	cm.Run(ctx, &faultydoubler{operand: 532})
 	cm.Run(ctx, &faultydoubler{operand: 203})
 
-	cm.Wait()
+	if err := cm.Wait(ctx); err != nil {
+		t.Fatalf("ConMan Wait returned an unexpected error: %v", err)
+	}
 	for _, o := range []int{598, 1064, 406} {
 		if slices.Contains(cm.Outputs(), o) {
 			t.Errorf("Didn't expect output %v in the captured outputs", o)
@@ -199,7 +209,9 @@ func TestDispatchTimeout(t *testing.T) {
 		t.Errorf("Expected context deadline exceeded error but got nil")
 	}
 
-	cm.Wait()
+	if err := cm.Wait(context.Background()); err != nil {
+		t.Fatalf("ConMan Wait returned an unexpected error: %v", err)
+	}
 	if !slices.Contains(cm.Outputs(), 598) {
 		t.Errorf("Expected output %v is not part of the captured outputs", 598)
 	}
@@ -222,7 +234,9 @@ func TestContextPropagation(t *testing.T) {
 		cancel()
 	}()
 
-	cm.Wait()
+	if err := cm.Wait(context.Background()); err != nil {
+		t.Fatalf("ConMan Wait returned an unexpected error: %v", err)
+	}
 	for _, o := range []int{598, 1064} {
 		if !slices.Contains(cm.Outputs(), o) {
 			t.Errorf("Expected output %v is not part of the captured outputs", o)

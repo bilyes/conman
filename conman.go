@@ -71,7 +71,11 @@ func New[T any](concurrencyLimit int64) (*ConMan[T], error) {
 	if concurrencyLimit < 2 {
 		return nil, fmt.Errorf("concurrencyLimit must be at least 2, got %d", concurrencyLimit)
 	}
-	return &ConMan[T]{buffer: make(chan any, concurrencyLimit)}, nil
+	return &ConMan[T]{
+		buffer:  make(chan any, concurrencyLimit),
+		outputs: make([]T, 0, concurrencyLimit), // Preallocate for all tasks
+		errors:  make([]error, 0),               // Let errors grow as needed (typically fewer)
+	}, nil
 }
 
 // Task defines the interface that all executable tasks must implement.
@@ -126,8 +130,30 @@ func (c *ConMan[T]) Run(ctx context.Context, t Task[T]) error {
 //
 // This method should be called after all Run() calls to ensure all tasks
 // have finished execution before accessing results or errors.
-func (c *ConMan[T]) Wait() {
-	c.wg.Wait()
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout control
+//
+// Returns:
+//   - error: Context cancellation error if ctx is cancelled before all tasks complete
+//     Returns nil if all tasks complete successfully
+//
+// Note: This method blocks until all tasks finish or context is cancelled.
+// After calling Wait(), you can access results via Outputs() and errors via Errors().
+func (c *ConMan[T]) Wait(ctx context.Context) error {
+	done := make(chan struct{})
+
+	go func() {
+		c.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-done:
+		return nil
+	}
 }
 
 // Outputs returns a slice of successful task results.
