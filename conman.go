@@ -111,6 +111,7 @@ func (c *ConMan[T]) executeTask(ctx context.Context, t Task[T]) {
 	})
 }
 
+// calculateDelay computes the delay before the next retry attempt
 func (c *ConMan[T]) calculateDelay(attempt int, config *RetryConfig) time.Duration {
 	delay := float64(config.InitialDelay) * math.Pow(config.BackoffFactor, float64(attempt))
 	if int64(delay) > config.MaxDelay {
@@ -122,6 +123,7 @@ func (c *ConMan[T]) calculateDelay(attempt int, config *RetryConfig) time.Durati
 	return time.Duration(delay) * time.Millisecond
 }
 
+// waitForNextAttempt waits for the calculated delay before the next retry attempt
 func (c *ConMan[T]) waitForNextAttempt(ctx context.Context, attempt int, config *RetryConfig) error {
 	timer := time.NewTimer(c.calculateDelay(attempt, config))
 	defer timer.Stop()
