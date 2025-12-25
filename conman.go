@@ -113,16 +113,14 @@ type Task[T any] interface {
 //
 //	Task execution errors are collected and accessible via Errors().
 func (c *ConMan[T]) Run(ctx context.Context, t Task[T]) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-		c.reserveOne()
-		go func() {
-			defer c.releaseOne()
-			c.executeTask(ctx, t)
-		}()
+	if err := ctx.Err(); err != nil {
+		return err
 	}
+	c.reserveOne()
+	go func() {
+		defer c.releaseOne()
+		c.executeTask(ctx, t)
+	}()
 	return nil
 }
 
@@ -232,13 +230,12 @@ func (c *ConMan[T]) calculateDelay(attempt int, config *RetryConfig) time.Durati
 
 // waitForNextAttempt waits for the calculated delay before the next retry attempt
 func (c *ConMan[T]) waitForNextAttempt(ctx context.Context, attempt int, config *RetryConfig) error {
-	timer := time.NewTimer(c.calculateDelay(attempt, config))
-	defer timer.Stop()
+	delay := c.calculateDelay(attempt, config)
 
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-timer.C:
+	case <-time.After(delay):
 		return nil
 	}
 }
