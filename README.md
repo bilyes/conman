@@ -50,22 +50,72 @@ return an error about context cancellation.
 ## Retries
 
 To automatically retry a task when it fails, the `Execute` function must return a pointer to a
-`RetriableError` object. This object should contain the original error (of type `error`) and an
-integer to set the maximum number of retries allowed. Example:
+`RetriableError` object. This object contains the original error and supports configurable retry
+strategies.
+
+### Retry Strategies
+
+ConMan provides three built-in retry strategies:
+
+#### Exponential Backoff (Default)
+Delays increase exponentially with each retry attempt, with jitter.
+
+```go
+type flakyTask struct {
+    runCount int
+}
+
+func (t *flakyTask) Execute(ctx context.Context) (int, error) {
+    if t.runCount < 2 {
+        t.runCount++
+        // Retry with exponential backoff
+        return -1, &RetriableError{Err: fmt.Errorf("Try again")}.WithExponentialBackoff()
+    }
+    return 42, nil
+}
+```
+
+#### Linear Backoff
+Delays increase linearly with each retry attempt.
+
+```go
+err := &RetriableError{Err: fmt.Errorf("Try again")}
+return -1, err.WithLinearBackoff()
+```
+
+#### No Backoff
+Immediate retries without delays.
+
+```go
+err := &RetriableError{Err: fmt.Errorf("Try again")}
+return -1, err.WithNoBackoff()
+```
+
+### Custom Retry Configuration
+
+Each retry strategy can be customized through the `RetryConfig`:
 
 ```go
 type sum struct {
     op1 int
     op2 int
-	runCount int
+    runCount int
 }
 
 func (s *sum) Execute(ctx context.Context) (int, error) {
-	if f.runCount < 2 {
-		f.runCount++
-        // This flags the task for retries and sets the maximum number of retries allowed
-		return -1, &RetriableError{Err: fmt.Errorf("Try again"), MaxRetries: 2}
-	}
+    if s.runCount < 2 {
+        s.runCount++
+        // Custom retry configuration
+        err := &RetriableError{Err: fmt.Errorf("Try again")}
+        err.RetryConfig = &RetryConfig{
+            MaxAttempts:   3,
+            InitialDelay:  100,  // milliseconds
+            BackoffFactor: 2.0,
+            MaxDelay:      5000, // milliseconds
+            Jitter:        true,
+        }
+        return -1, err
+    }
     return s.op1 + s.op2, nil
 }
 
