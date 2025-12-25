@@ -198,7 +198,9 @@ func main() {
     }
 
     // Wait until all tasks are completed
-    cm.Wait()
+    if err := cm.Wait(ctx); err != nil {
+		t.Fatalf("ConMan Wait returned an unexpected error: %v", err)
+    }
 
     // Check if there were any errors
     if errs := cm.Errors(); len(errs) > 0 {
